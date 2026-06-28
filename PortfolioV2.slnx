@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="PortfolioV2.Client/PortfolioV2.Client.csproj" />
+  <Project Path="PortfolioV2/PortfolioV2.csproj" />
+</Solution>
