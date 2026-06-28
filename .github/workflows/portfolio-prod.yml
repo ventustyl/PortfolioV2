@@ -1,0 +1,105 @@
+name: Portfolio production deployment
+
+on:
+  push:
+    tags:
+      - "prod-portfolio-*"
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  PROJECT_PATH: "PortfolioV2/PortfolioV2.csproj"
+  PUBLISH_DIR: "publish"
+  APP_PORT: "5000"
+
+jobs:
+  build-and-deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate production tag
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^prod-portfolio-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tag '${GITHUB_REF_NAME}'. Expected format: prod-portfolio-X.X.X"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore PortfolioV2.slnx
+
+      - name: Build
+        run: dotnet build PortfolioV2.slnx --configuration Release --no-restore
+
+      - name: Publish
+        run: |
+          dotnet publish "${PROJECT_PATH}" \
+            --configuration Release \
+            --no-build \
+            --output "${PUBLISH_DIR}"
+
+      - name: Prepare SSH
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${VPS_SSH_KEY}" > ~/.ssh/portfolio_deploy_key
+          chmod 600 ~/.ssh/portfolio_deploy_key
+          ssh-keyscan -p "${VPS_PORT}" "${VPS_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload release archive
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          tar -czf portfolio-release.tar.gz -C "${PUBLISH_DIR}" .
+          scp -i ~/.ssh/portfolio_deploy_key -P "${VPS_PORT}" \
+            portfolio-release.tar.gz \
+            "${VPS_USER}@${VPS_HOST}:/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz"
+
+      - name: Deploy and restart service
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
+        run: |
+          ssh -i ~/.ssh/portfolio_deploy_key -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" \
+            "RELEASE_ARCHIVE='/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz' \
+             DEPLOY_PATH='${VPS_DEPLOY_PATH}' \
+             SERVICE_NAME='${VPS_SERVICE_NAME}' \
+             APP_PORT='${APP_PORT}' \
+             bash -s" <<'EOF'
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_PATH}" ] || [ "${DEPLOY_PATH}" = "/" ]; then
+            echo "Invalid deploy path: '${DEPLOY_PATH}'"
+            exit 1
+          fi
+
+          sudo mkdir -p "${DEPLOY_PATH}"
+          sudo find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          sudo tar -xzf "${RELEASE_ARCHIVE}" -C "${DEPLOY_PATH}"
+          rm -f "${RELEASE_ARCHIVE}"
+
+          sudo systemctl restart "${SERVICE_NAME}"
+          sudo systemctl is-active --quiet "${SERVICE_NAME}"
+          EOF

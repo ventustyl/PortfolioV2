@@ -1,0 +1,17 @@
+[Unit]
+Description=PortfolioV2 ASP.NET Core application
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/portfolio
+ExecStart=/usr/bin/dotnet /var/www/portfolio/PortfolioV2.dll
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=portfolio-v2
+User=ubuntu
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+
+[Install]
+WantedBy=multi-user.target
