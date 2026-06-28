@@ -18,7 +18,8 @@ jobs:
   build-and-deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
-
+    environment: production
+    
     steps:
       - name: Validate production tag
         shell: bash
