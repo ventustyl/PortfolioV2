@@ -18,59 +18,101 @@ jobs:
   build-and-deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
-    environment: production
-    
+
     steps:
       - name: Validate production tag
         shell: bash
         run: |
+          set -euo pipefail
+
           if [[ ! "${GITHUB_REF_NAME}" =~ ^prod-portfolio-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid tag '${GITHUB_REF_NAME}'. Expected format: prod-portfolio-X.X.X"
+            echo "::error::Invalid tag '${GITHUB_REF_NAME}'. Expected format: prod-portfolio-X.X.X"
             exit 1
           fi
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore PortfolioV2.slnx
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore PortfolioV2.slnx
 
       - name: Build
-        run: dotnet build PortfolioV2.slnx --configuration Release --no-restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build PortfolioV2.slnx --configuration Release --no-restore
 
       - name: Publish
+        shell: bash
         run: |
-          dotnet publish "${PROJECT_PATH}" \
-            --configuration Release \
-            --no-build \
-            --output "${PUBLISH_DIR}"
+          set -euo pipefail
+          dotnet publish "${PROJECT_PATH}" --configuration Release --output "${PUBLISH_DIR}"
+
+      - name: Verify published output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "${PUBLISH_DIR}/PortfolioV2.dll" ]; then
+            echo "::error::Missing ${PUBLISH_DIR}/PortfolioV2.dll after publish"
+            find "${PUBLISH_DIR}" -maxdepth 3 -type f | sort || true
+            exit 1
+          fi
+
+          echo "Published files:"
+          find "${PUBLISH_DIR}" -maxdepth 3 -type f | sort
+
+      - name: Create release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf portfolio-release.tar.gz -C "${PUBLISH_DIR}" .
+          ls -lh portfolio-release.tar.gz
 
       - name: Prepare SSH
         shell: bash
         env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
         run: |
           set -euo pipefail
 
-          if [ -z "${VPS_SSH_KEY}" ]; then
-            echo "VPS_SSH_KEY is empty"
+          missing=0
+          for variable_name in VPS_HOST VPS_USER VPS_PORT VPS_SSH_KEY VPS_DEPLOY_PATH VPS_SERVICE_NAME; do
+            if [ -z "${!variable_name}" ]; then
+              echo "::error::Missing required GitHub secret ${variable_name}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
             exit 1
           fi
 
-          if [ -z "${VPS_HOST}" ]; then
-            echo "VPS_HOST is empty"
+          if [ "${VPS_SERVICE_NAME}" != "portfolio.service" ]; then
+            echo "::error::VPS_SERVICE_NAME must be exactly portfolio.service"
             exit 1
           fi
 
-          if [ -z "${VPS_PORT}" ]; then
-            echo "VPS_PORT is empty"
+          if [ "${VPS_DEPLOY_PATH}" != "/var/www/portfolio" ]; then
+            echo "::error::VPS_DEPLOY_PATH must be exactly /var/www/portfolio"
+            exit 1
+          fi
+
+          if ! [[ "${VPS_PORT}" =~ ^[0-9]+$ ]]; then
+            echo "::error::VPS_PORT must be a number"
             exit 1
           fi
 
@@ -78,28 +120,31 @@ jobs:
           printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/portfolio_deploy_key
           chmod 600 ~/.ssh/portfolio_deploy_key
           ssh-keyscan -p "${VPS_PORT}" "${VPS_HOST}" >> ~/.ssh/known_hosts
-          
-      - name: Upload release archive
+
+      - name: Upload archive to VPS
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
-          tar -czf portfolio-release.tar.gz -C "${PUBLISH_DIR}" .
+          set -euo pipefail
+
           scp -i ~/.ssh/portfolio_deploy_key -P "${VPS_PORT}" \
             portfolio-release.tar.gz \
             "${VPS_USER}@${VPS_HOST}:/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz"
 
-      - name: Deploy and restart service
+      - name: Deploy on VPS
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
         run: |
+          set -euo pipefail
+
           ssh -i ~/.ssh/portfolio_deploy_key -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" \
             "RELEASE_ARCHIVE='/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz' \
              DEPLOY_PATH='${VPS_DEPLOY_PATH}' \
@@ -108,16 +153,70 @@ jobs:
              bash -s" <<'EOF'
           set -euo pipefail
 
-          if [ -z "${DEPLOY_PATH}" ] || [ "${DEPLOY_PATH}" = "/" ]; then
-            echo "Invalid deploy path: '${DEPLOY_PATH}'"
+          show_service_logs() {
+            echo "portfolio.service logs:"
+            sudo journalctl -u portfolio.service -n 150 --no-pager || true
+          }
+
+          if [ "${SERVICE_NAME}" != "portfolio.service" ]; then
+            echo "Invalid service name: ${SERVICE_NAME}"
+            exit 1
+          fi
+
+          if [ "${DEPLOY_PATH}" != "/var/www/portfolio" ]; then
+            echo "Invalid deploy path: ${DEPLOY_PATH}"
+            exit 1
+          fi
+
+          if [ ! -f "${RELEASE_ARCHIVE}" ]; then
+            echo "Missing release archive: ${RELEASE_ARCHIVE}"
             exit 1
           fi
 
           sudo mkdir -p "${DEPLOY_PATH}"
+
+          if sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
+            sudo systemctl stop "${SERVICE_NAME}"
+          fi
+
           sudo find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           sudo tar -xzf "${RELEASE_ARCHIVE}" -C "${DEPLOY_PATH}"
           rm -f "${RELEASE_ARCHIVE}"
 
-          sudo systemctl restart "${SERVICE_NAME}"
-          sudo systemctl is-active --quiet "${SERVICE_NAME}"
+          echo "Deployed files in ${DEPLOY_PATH}:"
+          sudo find "${DEPLOY_PATH}" -maxdepth 3 -type f | sort
+
+          if [ ! -f "${DEPLOY_PATH}/PortfolioV2.dll" ]; then
+            echo "Missing ${DEPLOY_PATH}/PortfolioV2.dll after extraction"
+            exit 1
+          fi
+
+          sudo chown -R ubuntu:ubuntu "${DEPLOY_PATH}"
+          sudo chmod -R 755 "${DEPLOY_PATH}"
+
+          sudo systemctl daemon-reload
+          sudo systemctl restart "${SERVICE_NAME}" || {
+            show_service_logs
+            exit 1
+          }
+
+          sudo systemctl status "${SERVICE_NAME}" --no-pager || {
+            show_service_logs
+            exit 1
+          }
+
+          sudo systemctl is-active --quiet "${SERVICE_NAME}" || {
+            show_service_logs
+            exit 1
+          }
+
+          curl -I "http://127.0.0.1:${APP_PORT}" || {
+            show_service_logs
+            exit 1
+          }
+
+          curl -I -H "Host: ericventurino.fr" "http://127.0.0.1" || {
+            show_service_logs
+            exit 1
+          }
           EOF
