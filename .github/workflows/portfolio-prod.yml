@@ -11,13 +11,25 @@ permissions:
 env:
   DOTNET_VERSION: "10.0.x"
   PROJECT_PATH: "PortfolioV2/PortfolioV2.csproj"
+  SOLUTION_PATH: "PortfolioV2.slnx"
   PUBLISH_DIR: "publish"
   APP_PORT: "5000"
+  RELEASE_ARCHIVE_NAME: "portfolio-release.tar.gz"
 
 jobs:
   build-and-deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+      VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
 
     steps:
       - name: Validate production tag
@@ -30,11 +42,13 @@ jobs:
             exit 1
           fi
 
+          echo "Valid production tag: ${GITHUB_REF_NAME}"
+
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -42,19 +56,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dotnet restore PortfolioV2.slnx
+          dotnet restore "${SOLUTION_PATH}"
 
       - name: Build
         shell: bash
         run: |
           set -euo pipefail
-          dotnet build PortfolioV2.slnx --configuration Release --no-restore
+          dotnet build "${SOLUTION_PATH}" --configuration Release --no-restore
 
       - name: Publish
         shell: bash
         run: |
           set -euo pipefail
-          dotnet publish "${PROJECT_PATH}" --configuration Release --output "${PUBLISH_DIR}"
+          rm -rf "${PUBLISH_DIR}"
+          dotnet publish "${PROJECT_PATH}" \
+            --configuration Release \
+            --no-build \
+            --output "${PUBLISH_DIR}"
 
       - name: Verify published output
         shell: bash
@@ -63,6 +81,7 @@ jobs:
 
           if [ ! -f "${PUBLISH_DIR}/PortfolioV2.dll" ]; then
             echo "::error::Missing ${PUBLISH_DIR}/PortfolioV2.dll after publish"
+            echo "Published output content:"
             find "${PUBLISH_DIR}" -maxdepth 3 -type f | sort || true
             exit 1
           fi
@@ -74,24 +93,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar -czf portfolio-release.tar.gz -C "${PUBLISH_DIR}" .
-          ls -lh portfolio-release.tar.gz
+
+          rm -f "${RELEASE_ARCHIVE_NAME}"
+          tar -czf "${RELEASE_ARCHIVE_NAME}" -C "${PUBLISH_DIR}" .
+
+          echo "Release archive created:"
+          ls -lh "${RELEASE_ARCHIVE_NAME}"
 
       - name: Prepare SSH
         shell: bash
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
         run: |
           set -euo pipefail
 
           missing=0
+
           for variable_name in VPS_HOST VPS_USER VPS_PORT VPS_SSH_KEY VPS_DEPLOY_PATH VPS_SERVICE_NAME; do
-            if [ -z "${!variable_name}" ]; then
+            if [ -z "${!variable_name:-}" ]; then
               echo "::error::Missing required GitHub secret ${variable_name}"
               missing=1
             fi
@@ -103,11 +120,13 @@ jobs:
 
           if [ "${VPS_SERVICE_NAME}" != "portfolio.service" ]; then
             echo "::error::VPS_SERVICE_NAME must be exactly portfolio.service"
+            echo "::error::Current value is invalid."
             exit 1
           fi
 
           if [ "${VPS_DEPLOY_PATH}" != "/var/www/portfolio" ]; then
             echo "::error::VPS_DEPLOY_PATH must be exactly /var/www/portfolio"
+            echo "::error::Current value is invalid."
             exit 1
           fi
 
@@ -117,46 +136,48 @@ jobs:
           fi
 
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
           printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/portfolio_deploy_key
           chmod 600 ~/.ssh/portfolio_deploy_key
+
           ssh-keyscan -p "${VPS_PORT}" "${VPS_HOST}" >> ~/.ssh/known_hosts
 
       - name: Upload archive to VPS
         shell: bash
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           set -euo pipefail
 
-          scp -i ~/.ssh/portfolio_deploy_key -P "${VPS_PORT}" \
-            portfolio-release.tar.gz \
-            "${VPS_USER}@${VPS_HOST}:/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz"
+          REMOTE_ARCHIVE="/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz"
+
+          scp -i ~/.ssh/portfolio_deploy_key \
+            -P "${VPS_PORT}" \
+            "${RELEASE_ARCHIVE_NAME}" \
+            "${VPS_USER}@${VPS_HOST}:${REMOTE_ARCHIVE}"
 
       - name: Deploy on VPS
         shell: bash
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          VPS_SERVICE_NAME: ${{ secrets.VPS_SERVICE_NAME }}
         run: |
           set -euo pipefail
 
-          ssh -i ~/.ssh/portfolio_deploy_key -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" \
-            "RELEASE_ARCHIVE='/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz' \
-             DEPLOY_PATH='${VPS_DEPLOY_PATH}' \
-             SERVICE_NAME='${VPS_SERVICE_NAME}' \
-             APP_PORT='${APP_PORT}' \
-             bash -s" <<'EOF'
+          REMOTE_ARCHIVE="/tmp/portfolio-release-${GITHUB_REF_NAME}.tar.gz"
+
+          ssh -i ~/.ssh/portfolio_deploy_key \
+            -p "${VPS_PORT}" \
+            "${VPS_USER}@${VPS_HOST}" \
+            "RELEASE_ARCHIVE='${REMOTE_ARCHIVE}' DEPLOY_PATH='${VPS_DEPLOY_PATH}' SERVICE_NAME='${VPS_SERVICE_NAME}' APP_PORT='${APP_PORT}' bash -s" <<'EOF'
           set -euo pipefail
 
           show_service_logs() {
-            echo "portfolio.service logs:"
+            echo "===== portfolio.service logs ====="
             sudo journalctl -u portfolio.service -n 150 --no-pager || true
           }
+
+          echo "===== Deployment variables ====="
+          echo "RELEASE_ARCHIVE=${RELEASE_ARCHIVE}"
+          echo "DEPLOY_PATH=${DEPLOY_PATH}"
+          echo "SERVICE_NAME=${SERVICE_NAME}"
+          echo "APP_PORT=${APP_PORT}"
 
           if [ "${SERVICE_NAME}" != "portfolio.service" ]; then
             echo "Invalid service name: ${SERVICE_NAME}"
@@ -175,15 +196,17 @@ jobs:
 
           sudo mkdir -p "${DEPLOY_PATH}"
 
-          if sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
-            sudo systemctl stop "${SERVICE_NAME}"
-          fi
+          echo "===== Stop service if active ====="
+          sudo systemctl stop "${SERVICE_NAME}" || true
 
+          echo "===== Clean deploy directory ====="
           sudo find "${DEPLOY_PATH}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+
+          echo "===== Extract release archive ====="
           sudo tar -xzf "${RELEASE_ARCHIVE}" -C "${DEPLOY_PATH}"
           rm -f "${RELEASE_ARCHIVE}"
 
-          echo "Deployed files in ${DEPLOY_PATH}:"
+          echo "===== Deployed files ====="
           sudo find "${DEPLOY_PATH}" -maxdepth 3 -type f | sort
 
           if [ ! -f "${DEPLOY_PATH}/PortfolioV2.dll" ]; then
@@ -191,10 +214,13 @@ jobs:
             exit 1
           fi
 
+          echo "===== Apply permissions ====="
           sudo chown -R ubuntu:ubuntu "${DEPLOY_PATH}"
           sudo chmod -R 755 "${DEPLOY_PATH}"
 
+          echo "===== Restart service ====="
           sudo systemctl daemon-reload
+
           sudo systemctl restart "${SERVICE_NAME}" || {
             show_service_logs
             exit 1
@@ -210,13 +236,17 @@ jobs:
             exit 1
           }
 
+          echo "===== Test Kestrel directly ====="
           curl -I "http://127.0.0.1:${APP_PORT}" || {
             show_service_logs
             exit 1
           }
 
+          echo "===== Test through Caddy Host header ====="
           curl -I -H "Host: ericventurino.fr" "http://127.0.0.1" || {
             show_service_logs
             exit 1
           }
+
+          echo "Deployment completed successfully."
           EOF
