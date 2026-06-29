@@ -236,17 +236,60 @@ jobs:
             exit 1
           }
 
-          echo "===== Test Kestrel directly ====="
-          curl -I "http://127.0.0.1:${APP_PORT}" || {
-            show_service_logs
-            exit 1
-          }
+          echo "===== Listening ports after restart ====="
+          sudo ss -ltnp || true
+
+          echo "===== Wait for Kestrel on port ${APP_PORT} ====="
+
+          for attempt in {1..30}; do
+            if curl -fsS -I "http://127.0.0.1:${APP_PORT}" >/tmp/kestrel-check.txt 2>/tmp/kestrel-error.txt; then
+              echo "Kestrel is responding."
+              cat /tmp/kestrel-check.txt
+              break
+            fi
+
+            if ! sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
+              echo "Service stopped before Kestrel became available."
+              show_service_logs
+              exit 1
+            fi
+
+            echo "Waiting for Kestrel... attempt ${attempt}/30"
+            sleep 2
+
+            if [ "${attempt}" -eq 30 ]; then
+              echo "Kestrel did not respond after 60 seconds."
+              echo "Last curl error:"
+              cat /tmp/kestrel-error.txt || true
+              echo "Listening ports:"
+              sudo ss -ltnp || true
+              show_service_logs
+              exit 1
+            fi
+          done
 
           echo "===== Test through Caddy Host header ====="
-          curl -I -H "Host: ericventurino.fr" "http://127.0.0.1" || {
-            show_service_logs
-            exit 1
-          }
+
+          for attempt in {1..15}; do
+            if curl -fsS -I -H "Host: ericventurino.fr" "http://127.0.0.1" >/tmp/caddy-check.txt 2>/tmp/caddy-error.txt; then
+              echo "Caddy reverse proxy is responding."
+              cat /tmp/caddy-check.txt
+              break
+            fi
+
+            echo "Waiting for Caddy reverse proxy... attempt ${attempt}/15"
+            sleep 2
+
+            if [ "${attempt}" -eq 15 ]; then
+              echo "Caddy did not respond correctly after 30 seconds."
+              echo "Last curl error:"
+              cat /tmp/caddy-error.txt || true
+              echo "Listening ports:"
+              sudo ss -ltnp || true
+              show_service_logs
+              exit 1
+            fi
+          done
 
           echo "Deployment completed successfully."
           EOF
