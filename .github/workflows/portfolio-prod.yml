@@ -242,9 +242,9 @@ jobs:
           echo "===== Wait for Kestrel on port ${APP_PORT} ====="
 
           for attempt in {1..30}; do
-            if curl -fsS -I "http://127.0.0.1:${APP_PORT}" >/tmp/kestrel-check.txt 2>/tmp/kestrel-error.txt; then
+            if curl -fsS --max-time 10 -D /tmp/kestrel-headers.txt -o /tmp/kestrel-body.txt "http://127.0.0.1:${APP_PORT}" 2>/tmp/kestrel-error.txt; then
               echo "Kestrel is responding."
-              cat /tmp/kestrel-check.txt
+              cat /tmp/kestrel-headers.txt
               break
             fi
 
@@ -271,9 +271,9 @@ jobs:
           echo "===== Test through Caddy Host header ====="
 
           for attempt in {1..15}; do
-            if curl -fsS -I -H "Host: ericventurino.fr" "http://127.0.0.1" >/tmp/caddy-check.txt 2>/tmp/caddy-error.txt; then
+            if curl -fsS --max-time 10 -D /tmp/caddy-headers.txt -o /tmp/caddy-body.txt -H "Host: ericventurino.fr" "http://127.0.0.1" 2>/tmp/caddy-error.txt; then
               echo "Caddy reverse proxy is responding."
-              cat /tmp/caddy-check.txt
+              cat /tmp/caddy-headers.txt
               break
             fi
 
