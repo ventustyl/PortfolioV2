@@ -1,28 +1,28 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">PortfolioV2</a>
+﻿<div class="top-row">
+    <div class="brand-container">
+        <a class="site-brand" href="">PortfolioV2</a>
     </div>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<input type="checkbox" title="Navigation menu" class="nav-menu-toggle" />
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
+<div class="nav-scrollable" onclick="document.querySelector('.nav-menu-toggle').click()">
+    <nav class="nav-menu">
+        <div class="nav-item">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="nav-icon nav-icon-home" aria-hidden="true"></span> Home
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
+        <div class="nav-item">
             <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+                <span class="nav-icon nav-icon-counter" aria-hidden="true"></span> Counter
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
+        <div class="nav-item">
             <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+                <span class="nav-icon nav-icon-weather" aria-hidden="true"></span> Weather
             </NavLink>
         </div>
     </nav>
