@@ -1,13 +1,24 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
     <base href="/" />
+    <script>
+        (() => {
+            try {
+                const savedTheme = localStorage.getItem("portfolio-theme");
+                const theme = savedTheme === "light" || savedTheme === "dark"
+                    ? savedTheme
+                    : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+                document.documentElement.dataset.theme = theme;
+            } catch { }
+        })();
+    </script>
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
-    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="@Assets["PortfolioV2.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
@@ -17,6 +28,7 @@
 <body>
     <Routes />
     <ReconnectModal />
+    <script src="portfolio-slides.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
