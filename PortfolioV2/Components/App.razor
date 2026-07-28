@@ -4,19 +4,8 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <base href="/" />
-    <script>
-        (() => {
-            try {
-                const savedTheme = localStorage.getItem("portfolio-theme");
-                const theme = savedTheme === "light" || savedTheme === "dark"
-                    ? savedTheme
-                    : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-                document.documentElement.dataset.theme = theme;
-            } catch { }
-        })();
-    </script>
     <ResourcePreloader />
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="@Assets["PortfolioV2.styles.css"]" />

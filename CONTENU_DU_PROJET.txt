@@ -1,0 +1,93 @@
+INVENTAIRE DU PROJET PORTFOLIOV2
+================================
+
+Emplacement : D:\GitHub\PortfolioV2
+Date de l'inventaire : 13 juillet 2026
+
+ÉLÉMENTS À LA RACINE
+--------------------
+
+[Dossier] .git
+[Dossier] .github
+[Dossier] .vs
+[Dossier] deploy
+[Dossier] PortfolioV2
+[Dossier] PortfolioV2.Client
+[Fichier] .gitignore
+[Fichier] LICENSE
+[Fichier] PortfolioV2.slnLaunch.user
+[Fichier] PortfolioV2.slnx
+
+ARBORESCENCE DES FICHIERS DU PROJET
+-----------------------------------
+
+deploy\
+  portfolio.service.example
+
+PortfolioV2\
+  appsettings.Development.json
+  appsettings.json
+  PortfolioV2.csproj
+  Program.cs
+  Components\
+    _Imports.razor
+    App.razor
+    Routes.razor
+    Layout\
+      MainLayout.razor
+      MainLayout.razor.css
+      NavMenu.razor
+      NavMenu.razor.css
+      ReconnectModal.razor
+      ReconnectModal.razor.css
+      ReconnectModal.razor.js
+    Pages\
+      Error.razor
+      Home.razor
+      MarkdownConverter.razor
+      NotFound.razor
+  Properties\
+    launchSettings.json
+  wwwroot\
+    app.css
+    favicon.png
+    portfolio-slides.js
+    fonts\
+      NeonGlow.ttf
+    images\
+      brand\
+        accompagnement-booster.png
+        audit-seo.webp
+        eric-venturino.webp
+      certifications\
+        front-end.webp
+        javascript-algorithms.webp
+        next.webp
+        php.webp
+        python.webp
+        react-hooks.webp
+        redux.webp
+        responsive-web-design.webp
+      projects\
+        markdown-converter.webp
+        prochainement.webp
+        react-framework.webp
+
+PortfolioV2.Client\
+  _Imports.razor
+  PortfolioV2.Client.csproj
+  Program.cs
+  wwwroot\
+    appsettings.Development.json
+    appsettings.json
+
+FICHIERS À LA RACINE
+--------------------
+
+.gitignore
+LICENSE
+PortfolioV2.slnLaunch.user
+PortfolioV2.slnx
+
+Remarque : les contenus internes de .git et .vs ne sont pas détaillés, car il
+s'agit de dossiers techniques générés par Git et Visual Studio.
