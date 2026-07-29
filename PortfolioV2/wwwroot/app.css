@@ -2,7 +2,7 @@
 
 :root {
     color-scheme: dark;
-    font-family: "Manrope", system-ui, sans-serif;
+    font-family: "Syne", "Arial Black", sans-serif;
     font-synthesis: none;
     background: #000;
 }
@@ -125,7 +125,7 @@ h1 {
     gap: 0 .27em;
     margin: 0;
     color: #fff;
-    font-family: "Syne", "Arial Black", sans-serif;
+    font-family: "Manrope", system-ui, sans-serif;
     font-size: clamp(3.15rem, min(10.8vw, 22vh), 10.5rem);
     font-weight: 800;
     letter-spacing: -.075em;
@@ -137,6 +137,11 @@ h1 {
         0 16px 38px rgba(255, 255, 255, .18),
         0 34px 80px rgba(0, 0, 0, .8);
     perspective: 800px;
+}
+
+h1:focus,
+h1:focus-visible {
+    outline: none;
 }
 
 h1 span {
